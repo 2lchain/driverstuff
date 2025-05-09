@@ -664,7 +664,7 @@ const MMCI = struct {
             //return @as(*u128, @alignCast(@ptrCast(self))).*;
             //return @as(u128, self.resp[0]) << 96 |
             //    @as(u128, self.resp[1]) << 64 |
-            //    @as(u128, self.resp[2]) << 32 | 
+            //    @as(u128, self.resp[2]) << 32 |
             //    @as(u128, self.resp[3] & ~@as(u32, 1));
         }
 
@@ -872,37 +872,42 @@ const MMCI = struct {
     };
 
     const CMD8 = struct {
-        const ARG = packed struct(u32) { check_pattern: u8 = 0, vhs: u4, _1: u20 = 0 ,};
+        const ARG = packed struct(u32) {
+            check_pattern: u8 = 0,
+            vhs: u4,
+            _1: u20 = 0,
+        };
     };
 
     const ACMD41 = struct {
-        const ARG = packed struct(u32){
-            voltage_window: u24,
-            s18r: bool = false,
-            _1: u3 = 0,
-            xpc: bool = true,
-            _2: u1 = 0,
-            hcs: bool = true,
-            _3: u1 = 0
-        };
+        const ARG = packed struct(u32) { voltage_window: u24, s18r: bool = false, _1: u3 = 0, xpc: bool = true, _2: u1 = 0, hcs: bool = true, _3: u1 = 0 };
 
-        const RESP = packed struct (u32){
-            
-        };
+        const RESP = packed struct(u32) {};
     };
 
     const CardStatus = packed struct(u32) {
-        const State = enum(u4) { idle, ready, ident, stdby, tran, data, rcv, prg, dis, _, };
+        const State = enum(u4) {
+            idle,
+            ready,
+            ident,
+            stdby,
+            tran,
+            data,
+            rcv,
+            prg,
+            dis,
+            _,
+        };
 
         _1: u3,
         AKE_SEQ_ERROR: bool,
         _2: u1,
         APP_CMD: bool,
         FX_EVENT: bool,
-        SWITCH_ERROR: bool,//===7
-        READY_FOR_DATA: bool,//==8
-        CURRENT_STATE: State,//==9
-        ERASE_RESET: bool,//==12
+        SWITCH_ERROR: bool, //===7
+        READY_FOR_DATA: bool, //==8
+        CURRENT_STATE: State, //==9
+        ERASE_RESET: bool, //==12
         CARD_ECC_DISABLED: bool,
         WP_ERASE_SKIP: bool,
         CSD_OVERWRITE: bool,
@@ -925,19 +930,18 @@ const MMCI = struct {
 
     const CARDREGS = struct {
         const OCR = packed struct(u32) {
-            const Busy = enum(u1){initializing, done};
-            const CCS = enum(u1){sdsc, sdhc_xc};
-
+            const Busy = enum(u1) { initializing, done };
+            const CCS = enum(u1) { sdsc, sdhc_xc };
 
             _1: u24,
             s18a: bool,
             _2: u4,
             uhs2: bool,
             ccs: CCS,
-            busy: Busy
+            busy: Busy,
         };
 
-        const CID = packed struct(u128){
+        const CID = packed struct(u128) {
             _1: bool,
             crc: u7,
             mdrt: u12,
@@ -951,338 +955,488 @@ const MMCI = struct {
     };
 };
 
-/// baud rate divisor = 48_000_000
-///                    ______________
-///
-///                     16 * 115200
-///
-///
-/// i = 26
-/// f = 3
-///
-///
-export fn main() noreturn {
-    UART.enableTransimit();
-    //UART.enableReceive();
+const LAN = struct {
+    const base = 0x10010000;
 
-    //VIC.disableInterrupts();
+    const ControlByte = packed struct(u8) {
+        _1: u4 = 0,
+        /// When set, CRC will be appended to the frame. This bit has meaning only if the NOCRC bit in the TCR is set
+        crc: bool,
+        /// If set, indicates an odd number of bytes, with the last byte being right before the CONTROL BYTE. If clear, the
+        ///  number of data bytes is even and the byte before the CONTROL BYTE is not transmitted.
+        odd: bool,
+        _2: u2 = 0,
+    };
+
+    const RecvFrameStatus = packed struct(u16) { multicast: bool, _1: u9, tooshort: bool, toolong: bool, oddfrm: bool, badcrc: bool, broadcast: bool, alignerr: bool };
+
+    const Regs = struct {
+        const BankSelect = packed struct(u16) {
+            const offset = 0xe;
+
+            bank: u3,
+            _1: u13,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const TCR = packed struct(u16) {
+            const bank = 0;
+            const offset = 0;
+
+            txena: bool,
+            loop: bool,
+            forcol: bool,
+            _1: u4,
+            pad_en: bool,
+            nocrc: bool,
+            _2: u1,
+            mon_csn: bool,
+            fduplx: bool,
+            stpsqet: bool,
+            ephloop: bool,
+            _3: u1,
+            swfdup: bool,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const EPHStatus = packed struct(u16) {
+            const bank = 0;
+            const offset = 2;
+
+            tx_suc: bool,
+            snglcol: bool,
+            mulcol: bool,
+            ltxmult: bool,
+            @"16col": bool,
+            sqet: bool,
+            ltxbrd: bool,
+            txdefr: bool,
+            _1: u1,
+            latcol: bool,
+            lostcarr: bool,
+            exc_def: bool,
+            ctr_rol: bool,
+            _2: u1,
+            link_ok: bool,
+            _3: bool,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const RCR = packed struct(u16) {
+            const bank = 0;
+            const offset = 4;
+
+            rx_abort: bool,
+            prms: bool,
+            almul: bool,
+            _1: u5,
+            rxen: bool,
+            stripcrc: bool,
+            _2: u3,
+            abort_enb: bool,
+            filtcar: bool,
+            softrst: bool,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const Counter = packed struct(u16) {
+            const bank = 0;
+            const offset = 6;
+
+            single_collisions: u4,
+            multiple_collisions: u4,
+            defered_tx: u4,
+            excdeffered_tx: u4,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const MIR = packed struct(u16) {
+            const bank = 0;
+            const offset = 9;
+
+            free_mem: u8,
+            mem_size: u8,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const RPCR = packed struct(u16) {
+            const bank = 0;
+            const offset = 10;
+
+            _1: u2,
+            ls0b: bool,
+            ls1b: bool,
+            ls2b: bool,
+            ls0a: bool,
+            ls1a: bool,
+            ls2a: bool,
+            _2: u3,
+            aneg: bool,
+            dplx: bool,
+            speed: bool,
+            _3: u2,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const Config = packed struct(u16) {
+            const bank = 1;
+            const offset = 0;
+
+            _1: u9,
+            ext_phy: bool,
+            gpcntrl: bool,
+            _2: u1,
+            nowait: bool,
+            _3: u2,
+            eph_power_en: bool,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const BaseAddress = packed struct(u16) {
+            const offset = 2;
+            const bank = 1;
+            _1: u8,
+            _2: u8,
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const GPR = packed struct(u16) {
+            const bank = 1;
+            const offset = 10;
+
+            data: u16,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const Control = packed struct(u16) {
+            const offset = 12;
+            const bank = 1;
+
+            store: bool,
+            reload: bool,
+            eepromselect: bool,
+            _1: u2,
+            te_enable: bool,
+            cr_enable: bool,
+            le_enable: bool,
+            _2: u3,
+            auto_release: bool,
+            _3: u2,
+            rcv_bad: bool,
+            _4: u1,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const MMUCommand = packed struct(u16) {
+            const bank = 2;
+            const offset = 0;
+
+            const Command = enum(u3) {
+                noop,
+                allocmemtx,
+                reset,
+                remove_frame_from_top_rx,
+                remove_release_frame_from_top_rx,
+                release_specific_packet,
+                enque_packet_number_into_tx,
+                reset_tx_fifos,
+            };
+
+            busy: bool,
+            _1: u4,
+            command: Command,
+            _2: u8,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const PacketNumber = packed struct(u8) {
+            const offset = 2;
+            const bank = 2;
+
+            packet_number: u6,
+            _1: u2,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const AllocationResult = packed struct(u8) {
+            const offset = 3;
+            const bank = 2;
+
+            allocated_packet: u6,
+            _1: u1,
+            failed: bool,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const FIFOPorts = packed struct(u16) {
+            const offset = 4;
+            const bank = 2;
+
+            tx_fifo_packet_number: u6,
+            _1: u1,
+            tempty: bool,
+            rx_fifo_packet_number: u6,
+            _2: u1,
+            rempty: bool,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const Pointer = packed struct(u16) {
+            const offset = 6;
+            const bank = 2;
+
+            ptr: u11,
+            not_empty: bool,
+            _1: u1,
+            read: bool,
+            auto_incr: bool,
+            rcv: bool,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const Data = packed struct(u8) {
+            const offset = 8;
+            const bank = 2;
+
+            data: u8,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const IntStatus = packed struct(u8) {
+            const offset = 12;
+            const bank = 2;
+
+            rcv: bool,
+            tx: bool,
+            tx_empty: bool,
+            alloc: bool,
+            rx_ovrn: bool,
+            eph: bool,
+            _1: u1,
+            md: bool,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const IntMask = packed struct(u8) {
+            const offset = 13;
+            const bank = 2;
+
+            rcv: bool,
+            tx: bool,
+            tx_empty: bool,
+            alloc: bool,
+            rx_ovrn: bool,
+            eph: bool,
+            _1: u1,
+            md: bool,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const MulticastTable = extern struct {
+            const offset = 0;
+            const bank = 3;
+
+            table: [8]u8,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const Management = packed struct(u16) {
+            const offset = 8;
+            const bank = 3;
+
+            md0: bool,
+            md1: bool,
+            mclk: bool,
+            mdoe: bool,
+            _1: u10,
+            msk_crs100: bool,
+            _2: u1,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const Revision = packed struct(u16) {
+            const offset = 10;
+            const bank = 3;
+
+            rev: u4,
+            chip: u4,
+            _1: u8,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+
+        const RCV = packed struct(u16) {
+            const offset = 12;
+            const bank = 3;
+
+            mbo: u5,
+            _1: u2,
+            rcv_discard: bool,
+            _2: u8,
+
+            inline fn getPtr() *@This() {
+                return @ptrFromInt(offset + base);
+            }
+        };
+    };
+};
+
+fn initLan() void {
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.Config.bank;
+    LAN.Regs.Config.getPtr().eph_power_en = true;
+    LAN.Regs.TCR.getPtr().loop = true;
+
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.MMUCommand.bank;
+    LAN.Regs.MMUCommand.getPtr().command = .reset;
+
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.RCR.bank;
+    LAN.Regs.RCR.getPtr().rxen = true;
+    LAN.Regs.RCR.getPtr().stripcrc = true;
+
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.TCR.bank;
+    LAN.Regs.TCR.getPtr().txena = true;
+    LAN.Regs.TCR.getPtr().nocrc = true;
 
     //VIC.enableInterrupts();
-    //VIC.VICSOFTINT.getPtr().trigger(12);
+    //VIC.VICINTENABLE.getPtr().enable(25);
+}
 
-    //asm volatile(".global breakpt");
-    //asm volatile("breakpt:");
-    //UART.enableReceive();
+export fn main() noreturn {
+    UART.enableTransimit();
 
-    //UART.disable();
-    //UART.print("hello world!!!\n", .{});
-    //asm volatile ("bkpt");
-    MMCI.MCIPower.getPtr().ctrl = .power_on;
+    initLan();
 
-    MMCI.MCIArgument.getPtr().cmd_arg = 0;
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.MMUCommand.bank;
+    LAN.Regs.MMUCommand.getPtr().command = .allocmemtx;
+    LAN.Regs.MMUCommand.getPtr().command = .allocmemtx;
 
-    //MMCI.MMCCommand.getPtr().* = .{
-    //    .enable = true,
-    //    .interrupt = false,
-    //    .pending = false,
-    //    .long_rsp = false,
-    //    .response = false,
-    //    .cmd_index = 0,
-    //    ._1 = 0
-    //};
-
-    MMCI.MCIDataTimer.getPtr().data_time = 0xffff_ffff;
-
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = false,
-        .cmd_index = 0,
-        ._1 = 3,
-    };
-
-    MMCI.MCIArgument.getPtr().cmd_arg = @bitCast(MMCI.CMD8.ARG{ .vhs = 1 });
-
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 8,
-        ._1 = 0,
-    };
-
-
-
-    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
-    UART.print("hello world!!!: {}\n", .{@as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()))});
-
-
-    MMCI.MCIArgument.getPtr().cmd_arg = 0;
-
-
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 55,
-        ._1 = 0,
-    };
-
-    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
-    UART.print("hello world!!!: {}\n", .{@as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()))});
-
-
-    MMCI.MCIArgument.getPtr().cmd_arg = @bitCast(MMCI.ACMD41.ARG{
-        .voltage_window = 0,
-    });
-
-
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 41,
-        ._1 = 0,
-    };
-
-    MMCI.MCIClear.getPtr().* = @bitCast(@as(u32,0xffff_ffff));
-    MMCI.MCIArgument.getPtr().cmd_arg = 0;
-
-
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 55,
-        ._1 = 0,
-    };
-
-
-
-    UART.print("---> hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
-    UART.print("---> hello world!!!: {}\n", .{@as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()))});
-
-
-    MMCI.MCIClear.getPtr().* = @bitCast(@as(u32,0xffff_ffff));
-    UART.print("====> zeroed: !!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
-
-    MMCI.MCIArgument.getPtr().cmd_arg = @bitCast(MMCI.ACMD41.ARG{
-        .voltage_window = 0xff_ffff,
-    });
-
-
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 41,
-        ._1 = 0,
-    };
-
-    //_= regg;
-    const regg = @as(MMCI.CARDREGS.OCR, @bitCast(MMCI.MCIResponse0.getShort()));
-    UART.print("hello world!!!: {}\n", .{regg.busy});
-
-    UART.print("==========================================\n", .{});
-
-    MMCI.MCIClear.getPtr().* = @bitCast(@as(u32,0xffff_ffff));
-    MMCI.MCIArgument.getPtr().cmd_arg = 0;
-
-
-    //MMCI.MMCCommand.getPtr().* = .{
-    //    .enable = true,
-    //    .interrupt = false,
-    //    .pending = false,
-    //    .long_rsp = false,
-    //    .response = true,
-    //    .cmd_index = 55,
-    //    ._1 = 0,
-    //};
-
-
-    //UART.print("===---> hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
-    //UART.print("===---> hello world!!!: {b}\n", .{(MMCI.MCIResponse0.getShort()&0b1111000000000)});
-
-
-    MMCI.MCIDataTimer.getPtr().data_time = 0xffff_ffff;
-
-
-    MMCI.MCIArgument.getPtr().cmd_arg = 0;
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = true,
-        .response = true,
-        .cmd_index = 2,
-        ._1 = 0,
-    };
-//'X','Y', 'Q','E', 'M','U','!',
-    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
     
-    //const cid = MMCI.MCIResponse0.getLong();
+    LAN.Regs.PacketNumber.getPtr().packet_number = LAN.Regs.AllocationResult.getPtr().allocated_packet;
 
-    //UART.print("cid: {x}\n", .{cid.prv});
-    //UART.print("cid: {any}\n", .{cid});
-
-    MMCI.MCIArgument.getPtr().cmd_arg = 0;
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 3,
+    LAN.Regs.Pointer.getPtr().* = .{
         ._1 = 0,
+        .auto_incr = true,
+        .ptr = 0,
+        .rcv = false,
+        .read = false,
+        .not_empty = false
     };
 
+    //0x2000
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.Data.bank;
 
-    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+    //0x40
 
-    const rca = MMCI.MCIResponse0.getShort()&0xffff0000;
+    LAN.Regs.Data.getPtr().data = 0;
+    LAN.Regs.Data.getPtr().data = 0;
+    LAN.Regs.Data.getPtr().data = 128;
+    LAN.Regs.Data.getPtr().data = 0;
 
-    UART.print("RCA: {}\n", .{
-        rca>>16
-    });
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.MMUCommand.bank;
+    LAN.Regs.MMUCommand.getPtr().command = .enque_packet_number_into_tx;
 
-
-    MMCI.MCIArgument.getPtr().cmd_arg = MMCI.MCIResponse0.getShort();
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 7,
-        ._1 = 0,
-    };
-
-    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
-
-
-
-    MMCI.MCIArgument.getPtr().cmd_arg =rca;
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 13,
-        ._1 = 0,
-    };
-
-    UART.print("=================> hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
-
-    var status = @as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()));
-    UART.print("status: {}\n", .{status});
-
-    MMCI.MCIClear.getPtr().* = @bitCast(@as(u32,0xffff_ffff));
-
-//===========================write
-    MMCI.MCIDataLength.getPtr().data_length = 512;
-    MMCI.MCIDataCtrl.getPtr().* = .{
-        ._1 = 0,
-        .direction = .to_card,
-        .enable = true,
-        .dma_enable = false,
-        .block_size = 9,
-        .mode = .block
-    };
-
-    MMCI.MCIArgument.getPtr().cmd_arg = 0;
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 24,
-        ._1 = 0,
-    };
-
-
-    var written:usize = 0;
-
-    while (written<512/4) {
-        if(!MMCI.MCIStatus.getPtr().tx_fifo_full){
-            MMCI.MCIFIFO.getPtr().data[0] = written*2;
-            written += 1;
-        }
-    }
-
-    UART.print("=======================writtten stuff============\n", .{});
-
-//============================read
-    MMCI.MCIDataLength.getPtr().data_length = 512;
-    MMCI.MCIDataCtrl.getPtr().* = .{
-        ._1 = 0,
-        .direction = .from_card,
-        .enable = true,
-        .dma_enable = false,
-        .block_size = 9,
-        .mode = .block
-    };
-
-
-    MMCI.MCIArgument.getPtr().cmd_arg = 0;
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 17,
-        ._1 = 0,
-    };
-
-    status = @as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()));
-    UART.print("status: {}\n", .{status});
-
-    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
     
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.Pointer.bank;
 
-    MMCI.MCIArgument.getPtr().cmd_arg =rca;
-    MMCI.MMCCommand.getPtr().* = .{
-        .enable = true,
-        .interrupt = false,
-        .pending = false,
-        .long_rsp = false,
-        .response = true,
-        .cmd_index = 13,
+
+    UART.print("BANK: {}\n", .{ LAN.Regs.Pointer.getPtr().ptr });
+
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.IntStatus.bank;
+
+    UART.print("BANK: {}\n", .{ LAN.Regs.IntStatus.getPtr() });
+
+
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.FIFOPorts.bank;
+    const packet_number = LAN.Regs.FIFOPorts.getPtr().tx_fifo_packet_number;
+
+
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.PacketNumber.bank;
+    LAN.Regs.PacketNumber.getPtr().packet_number = packet_number;
+
+
+
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.Pointer.bank;
+    LAN.Regs.Pointer.getPtr().* = .{
         ._1 = 0,
+        .auto_incr = true,
+        .ptr = 0,
+        .rcv = false,
+        .read = true,
+        .not_empty = false
     };
 
+    //0b100000000000001
+    //0xffff
 
-    status = @as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()));
-    UART.print("status: {}\n", .{status});
+    LAN.Regs.BankSelect.getPtr().bank = LAN.Regs.Data.bank;
+    var status: u8 = @bitCast(LAN.Regs.Data.getPtr().data);
+    status = @bitCast(LAN.Regs.Data.getPtr().data);
 
-
-    var read: usize = 0;
-
-    var acc: u32 = 0;
-
-    while (read<512/4) {
-        if(MMCI.MCIStatus.getPtr().rx_data_avlbl) {
-            read += 1;
-            acc = MMCI.MCIFIFO.getPtr().data[0];
-            UART.print("===: {}\n", .{acc});
-        }
-    }
-
-    UART.print("read finish...\n", .{});
+    UART.print("STATUS: {b} {b}\n", .{packet_number, status});
 
     while (true) {
         //UART.print("=====================: {}\n", .{
@@ -1485,3 +1639,303 @@ export fn bkptStub() callconv(.naked) void {
 //export fn fiqHandler()
 
 const std = @import("std");
+
+/// baud rate divisor = 48_000_000
+///                    ______________
+///
+///                     16 * 115200
+///
+///
+/// i = 26
+/// f = 3
+///
+///
+export fn sd() noreturn {
+    UART.enableTransimit();
+    //UART.enableReceive();
+
+    //VIC.disableInterrupts();
+
+    //VIC.enableInterrupts();
+    //VIC.VICSOFTINT.getPtr().trigger(12);
+
+    //asm volatile(".global breakpt");
+    //asm volatile("breakpt:");
+    //UART.enableReceive();
+
+    //UART.disable();
+    //UART.print("hello world!!!\n", .{});
+    //asm volatile ("bkpt");
+    MMCI.MCIPower.getPtr().ctrl = .power_on;
+
+    MMCI.MCIArgument.getPtr().cmd_arg = 0;
+
+    //MMCI.MMCCommand.getPtr().* = .{
+    //    .enable = true,
+    //    .interrupt = false,
+    //    .pending = false,
+    //    .long_rsp = false,
+    //    .response = false,
+    //    .cmd_index = 0,
+    //    ._1 = 0
+    //};
+
+    MMCI.MCIDataTimer.getPtr().data_time = 0xffff_ffff;
+
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = false,
+        .cmd_index = 0,
+        ._1 = 3,
+    };
+
+    MMCI.MCIArgument.getPtr().cmd_arg = @bitCast(MMCI.CMD8.ARG{ .vhs = 1 });
+
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 8,
+        ._1 = 0,
+    };
+
+    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+    UART.print("hello world!!!: {}\n", .{@as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()))});
+
+    MMCI.MCIArgument.getPtr().cmd_arg = 0;
+
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 55,
+        ._1 = 0,
+    };
+
+    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+    UART.print("hello world!!!: {}\n", .{@as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()))});
+
+    MMCI.MCIArgument.getPtr().cmd_arg = @bitCast(MMCI.ACMD41.ARG{
+        .voltage_window = 0,
+    });
+
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 41,
+        ._1 = 0,
+    };
+
+    MMCI.MCIClear.getPtr().* = @bitCast(@as(u32, 0xffff_ffff));
+    MMCI.MCIArgument.getPtr().cmd_arg = 0;
+
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 55,
+        ._1 = 0,
+    };
+
+    UART.print("---> hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+    UART.print("---> hello world!!!: {}\n", .{@as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()))});
+
+    MMCI.MCIClear.getPtr().* = @bitCast(@as(u32, 0xffff_ffff));
+    UART.print("====> zeroed: !!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+
+    MMCI.MCIArgument.getPtr().cmd_arg = @bitCast(MMCI.ACMD41.ARG{
+        .voltage_window = 0xff_ffff,
+    });
+
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 41,
+        ._1 = 0,
+    };
+
+    //_= regg;
+    const regg = @as(MMCI.CARDREGS.OCR, @bitCast(MMCI.MCIResponse0.getShort()));
+    UART.print("hello world!!!: {}\n", .{regg.busy});
+
+    UART.print("==========================================\n", .{});
+
+    MMCI.MCIClear.getPtr().* = @bitCast(@as(u32, 0xffff_ffff));
+    MMCI.MCIArgument.getPtr().cmd_arg = 0;
+
+    //MMCI.MMCCommand.getPtr().* = .{
+    //    .enable = true,
+    //    .interrupt = false,
+    //    .pending = false,
+    //    .long_rsp = false,
+    //    .response = true,
+    //    .cmd_index = 55,
+    //    ._1 = 0,
+    //};
+
+    //UART.print("===---> hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+    //UART.print("===---> hello world!!!: {b}\n", .{(MMCI.MCIResponse0.getShort()&0b1111000000000)});
+
+    MMCI.MCIDataTimer.getPtr().data_time = 0xffff_ffff;
+
+    MMCI.MCIArgument.getPtr().cmd_arg = 0;
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = true,
+        .response = true,
+        .cmd_index = 2,
+        ._1 = 0,
+    };
+    //'X','Y', 'Q','E', 'M','U','!',
+    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+
+    //const cid = MMCI.MCIResponse0.getLong();
+
+    //UART.print("cid: {x}\n", .{cid.prv});
+    //UART.print("cid: {any}\n", .{cid});
+
+    MMCI.MCIArgument.getPtr().cmd_arg = 0;
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 3,
+        ._1 = 0,
+    };
+
+    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+
+    const rca = MMCI.MCIResponse0.getShort() & 0xffff0000;
+
+    UART.print("RCA: {}\n", .{rca >> 16});
+
+    MMCI.MCIArgument.getPtr().cmd_arg = MMCI.MCIResponse0.getShort();
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 7,
+        ._1 = 0,
+    };
+
+    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+
+    MMCI.MCIArgument.getPtr().cmd_arg = rca;
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 13,
+        ._1 = 0,
+    };
+
+    UART.print("=================> hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+
+    var status = @as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()));
+    UART.print("status: {}\n", .{status});
+
+    MMCI.MCIClear.getPtr().* = @bitCast(@as(u32, 0xffff_ffff));
+
+    //===========================write
+    MMCI.MCIDataLength.getPtr().data_length = 512;
+    MMCI.MCIDataCtrl.getPtr().* = .{ ._1 = 0, .direction = .to_card, .enable = true, .dma_enable = false, .block_size = 9, .mode = .block };
+
+    MMCI.MCIArgument.getPtr().cmd_arg = 0;
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 24,
+        ._1 = 0,
+    };
+
+    var written: usize = 0;
+
+    while (written < 512 / 4) {
+        if (!MMCI.MCIStatus.getPtr().tx_fifo_full) {
+            MMCI.MCIFIFO.getPtr().data[0] = written * 2;
+            written += 1;
+        }
+    }
+
+    UART.print("=======================writtten stuff============\n", .{});
+
+    //============================read
+    MMCI.MCIDataLength.getPtr().data_length = 512;
+    MMCI.MCIDataCtrl.getPtr().* = .{ ._1 = 0, .direction = .from_card, .enable = true, .dma_enable = false, .block_size = 9, .mode = .block };
+
+    MMCI.MCIArgument.getPtr().cmd_arg = 0;
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 17,
+        ._1 = 0,
+    };
+
+    status = @as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()));
+    UART.print("status: {}\n", .{status});
+
+    UART.print("hello world!!!: {}\n", .{MMCI.MCIStatus.getPtr().*});
+
+    MMCI.MCIArgument.getPtr().cmd_arg = rca;
+    MMCI.MMCCommand.getPtr().* = .{
+        .enable = true,
+        .interrupt = false,
+        .pending = false,
+        .long_rsp = false,
+        .response = true,
+        .cmd_index = 13,
+        ._1 = 0,
+    };
+
+    status = @as(MMCI.CardStatus, @bitCast(MMCI.MCIResponse0.getShort()));
+    UART.print("status: {}\n", .{status});
+
+    var read: usize = 0;
+
+    var acc: u32 = 0;
+
+    while (read < 512 / 4) {
+        if (MMCI.MCIStatus.getPtr().rx_data_avlbl) {
+            read += 1;
+            acc = MMCI.MCIFIFO.getPtr().data[0];
+            UART.print("===: {}\n", .{acc});
+        }
+    }
+
+    UART.print("read finish...\n", .{});
+
+    while (true) {
+        //UART.print("=====================: {}\n", .{
+        //    RTC.RTCDR.getPtr().back
+        //});
+    }
+}
